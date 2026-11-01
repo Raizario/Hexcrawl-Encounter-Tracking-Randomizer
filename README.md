@@ -1,4 +1,4 @@
-# Xen'drik Hexcrawl & Journeys — v0.1.3
+# Xen'drik Hexcrawl & Journeys — v0.1.4.1
 
 Foundry VTT V14, D&D 5e system v6.0.6.
 
@@ -18,3 +18,16 @@ Foundry VTT V14, D&D 5e system v6.0.6.
 
 ## Install
 Use the module.json manifest asset from the latest GitHub Release. Upload both module.json and the versioned ZIP as release assets.
+
+
+## v0.1.4.1 fixes
+- Editable positive hexes-per-day value
+- Encounter die displayed as dN / DC N and sent to chat as a roll
+- Native Create Journey form with folder selection
+- Token movement tracking is post-update and read-only
+- Automatic sheet skill check capture for supported D&D 5e chat roll metadata; manual check remains fallback
+
+## v0.1.4.1
+- Alphabetically sorted character skill selections.
+- GM can manually mark any participating actor skill or ability score check as used, without changing journey scores or rotation.
+- Manual marks are saved per journey, announced in chat, and reversible in Used Skills & History.
