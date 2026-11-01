@@ -1,0 +1,17 @@
+<section class="xh-sidebar">
+  <header class="xh-sidebar-header"><h2>Journeys</h2>{{#if isGM}}<div class="xh-sidebar-buttons"><button type="button" data-new-journey title="Create Journey"><i class="fa-solid fa-plus"></i> Create Journey</button><button type="button" data-new-folder title="Create Folder"><i class="fa-solid fa-folder-plus"></i></button></div>{{/if}}</header>
+  {{#each folders}}
+    <section class="xh-folder"><h3><i class="fa-solid fa-folder"></i> {{name}} {{#if ../isGM}}<button type="button" data-rename-folder="{{id}}" title="Rename Folder"><i class="fa-solid fa-pen"></i></button>{{/if}}</h3>
+    {{#each items}}
+      <div class="xh-journey {{#if selected}}xh-selected{{/if}}"><button type="button" data-open-journey="{{id}}"><i class="fa-solid fa-route"></i> {{name}} <small>Day {{day}}{{#if active}} · Active{{/if}}</small></button>
+      {{#if ../../isGM}}<div class="xh-tools"><button type="button" data-rename-journey="{{id}}" title="Rename"><i class="fa-solid fa-pen"></i></button><button type="button" data-delete-journey="{{id}}" title="Delete"><i class="fa-solid fa-trash"></i></button><select data-move-journey="{{id}}" title="Move to folder"><option value="">Unfiled</option>{{#each ../../folders}}<option value="{{id}}">{{name}}</option>{{/each}}</select></div>{{/if}}
+      </div>
+    {{/each}}</section>
+  {{/each}}
+  {{#each ungrouped}}
+    <div class="xh-journey {{#if selected}}xh-selected{{/if}}"><button type="button" data-open-journey="{{id}}"><i class="fa-solid fa-route"></i> {{name}} <small>Day {{day}}{{#if active}} · Active{{/if}}</small></button>
+    {{#if ../isGM}}<div class="xh-tools"><button type="button" data-rename-journey="{{id}}" title="Rename"><i class="fa-solid fa-pen"></i></button><button type="button" data-delete-journey="{{id}}" title="Delete"><i class="fa-solid fa-trash"></i></button><select data-move-journey="{{id}}" title="Move to folder"><option value="">Unfiled</option>{{#each ../folders}}<option value="{{id}}">{{name}}</option>{{/each}}</select></div>{{/if}}
+    </div>
+  {{/each}}
+  {{#unless ungrouped}}{{#unless folders}}<p class="xh-empty">No journeys yet. Create one to begin.</p>{{/unless}}{{/unless}}
+</section>

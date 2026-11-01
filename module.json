@@ -1,8 +1,8 @@
 {
   "id": "xendrik-hexcrawl",
   "title": "Xen'drik Hexcrawl & Journeys",
-  "description": "Hex travel, journey day log, encounters, skill rotation and exhaustion. Calendar integration optional in a future release.",
-  "version": "0.1.2",
+  "description": "Native Journeys sidebar with folders and per-journey settings, hex travel, encounters, skill rotation, day log, exhaustion.",
+  "version": "0.1.3",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -32,5 +32,5 @@
   ],
   "url": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer",
   "manifest": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json",
-  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.2/xendrik-hexcrawl-v0.1.2.zip"
+  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.3/xendrik-hexcrawl-v0.1.3.zip"
 }

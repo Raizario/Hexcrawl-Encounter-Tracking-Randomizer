@@ -1,21 +1,20 @@
-# Xen'drik Hexcrawl & Journeys
+# Xen'drik Hexcrawl & Journeys — v0.1.3
 
-Foundry VTT V14 module for hex travel, journey day logs, encounters, skill rotation, and exhaustion.
+Foundry VTT V14, D&D 5e system v6.0.6.
 
-## Installation
+## What's new
+- Native **Journeys** sidebar tab (using the Foundry V14 sidebar API demonstrated by Dice So Nice).
+- Create and reopen named journeys, group journeys into folders, rename, move, or delete inactive journeys.
+- Each journey saves its own settings, party, progress, day log, and skill checks in world settings.
+- Previous v0.1.2 journey data is imported automatically if nonempty.
+- Removed the Game Settings checkbox launcher. Open journeys from the sidebar.
 
-Install using the manifest URL:
+## Known limitations
+- The build has not been tested in a running Foundry V14 instance. Please back up your world before installation.
+- Only one journey should be active at a time for automated token travel. Do not switch the active journey while another is in progress.
+- Skill check automation and Traveler's Curse token displacement are not fully implemented; use the manager's manual controls.
+- Exhaustion applies the numeric system exhaustion value, but does not automatically implement every house-rule roll/DC modifier.
+- Simple Calendar integration is planned but optional.
 
-`https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json`
-
-## Publishing v0.1.2
-
-1. Extract the repository ZIP and upload its **contents** to the root of the `main` branch (preserve `scripts/` and `styles/`).
-2. Create a GitHub release with tag `v0.1.2`.
-3. Attach `xendrik-hexcrawl-v0.1.2.zip` and `module.json` as release assets.
-4. Publish the release.
-
-The module manifest points to the latest release manifest and the version-specific ZIP.
-Simple Calendar integration is planned as **optional compatibility**, not a required dependency.
-
-Development build; not yet validated inside Foundry V14.
+## Install
+Use the module.json manifest asset from the latest GitHub Release. Upload both module.json and the versioned ZIP as release assets.
