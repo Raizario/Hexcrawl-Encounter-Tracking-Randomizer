@@ -1,33 +1,13 @@
-# Xen'drik Hexcrawl & Journeys — v0.1.4.1
+# Xen'drik Hexcrawl v0.1.5
 
-Foundry VTT V14, D&D 5e system v6.0.6.
+Updates from v0.1.4.1:
+- Skill-specific chat prompts, with one roll button for each eligible party actor who has the skill in actor.system.skills.
+- Difficulty tiers Common Sense (-5), Skilled (+0), Expert (+5), Outlandish (+10) applied to the base tracking DC and condition modifier.
+- Tracking DC is now a positive-integer input.
+- Manual skill records can be Used Only, Success, or Failure, with Undo.
+- Party actors display their prototype token artwork, falling back to portrait.
+- Token movement while paused is queued and processed after an encounter resolves rather than silently discarded.
 
-## What's new
-- Native **Journeys** sidebar tab (using the Foundry V14 sidebar API demonstrated by Dice So Nice).
-- Create and reopen named journeys, group journeys into folders, rename, move, or delete inactive journeys.
-- Each journey saves its own settings, party, progress, day log, and skill checks in world settings.
-- Previous v0.1.2 journey data is imported automatically if nonempty.
-- Removed the Game Settings checkbox launcher. Open journeys from the sidebar.
+Note: Chat prompt skill rolls use dnd5e actor.rollSkill (or rollSkillCheck fallback) and are not a dependency on Midi-QOL. A player must own the selected actor to roll. Foundry 14 + D&D 6.x runtime testing is recommended. Existing saved journeys are preserved.
 
-## Known limitations
-- The build has not been tested in a running Foundry V14 instance. Please back up your world before installation.
-- Only one journey should be active at a time for automated token travel. Do not switch the active journey while another is in progress.
-- Skill check automation and Traveler's Curse token displacement are not fully implemented; use the manager's manual controls.
-- Exhaustion applies the numeric system exhaustion value, but does not automatically implement every house-rule roll/DC modifier.
-- Simple Calendar integration is planned but optional.
-
-## Install
-Use the module.json manifest asset from the latest GitHub Release. Upload both module.json and the versioned ZIP as release assets.
-
-
-## v0.1.4.1 fixes
-- Editable positive hexes-per-day value
-- Encounter die displayed as dN / DC N and sent to chat as a roll
-- Native Create Journey form with folder selection
-- Token movement tracking is post-update and read-only
-- Automatic sheet skill check capture for supported D&D 5e chat roll metadata; manual check remains fallback
-
-## v0.1.4.1
-- Alphabetically sorted character skill selections.
-- GM can manually mark any participating actor skill or ability score check as used, without changing journey scores or rotation.
-- Manual marks are saved per journey, announced in chat, and reversible in Used Skills & History.
+Install the module ZIP as usual, replacing v0.1.4.1. The repository ZIP includes editable source.

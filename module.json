@@ -1,8 +1,8 @@
 {
   "id": "xendrik-hexcrawl",
   "title": "Xen'drik Hexcrawl & Journeys",
-  "description": "Journeys sidebar, editable travel pace, Foundry encounter dice, sheet skill capture, and safer token movement tracking.",
-  "version": "0.1.4.1",
+  "description": "Interactive skill-specific tracking prompts, manual outcomes, token art, and movement queue fixes.",
+  "version": "0.1.5",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -32,5 +32,5 @@
   ],
   "url": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer",
   "manifest": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json",
-  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.4.1/xendrik-hexcrawl-v0.1.4.1.zip"
+  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.5/xendrik-hexcrawl-v0.1.5.zip"
 }
