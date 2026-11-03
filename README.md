@@ -1,15 +1,5 @@
-# Xen’drik Hexcrawl & Journeys v0.1.5.1
+# Xen'drik Hexcrawl v0.1.5.2
 
-Foundry VTT 14 / dnd5e 6.0.6.
+Movement detection hotfix. Replaces Scene.grid API assumptions with V14 canvas grid path lookup and pixel-distance fallback. Adds console debug entries (`[Xendrik]`) on token moves to help diagnose matching/position problems. Preserves the rest of v0.1.5.1.
 
-## GitHub repository
-Upload `module.json`, `scripts/`, `styles/`, `templates/`, and this README to the repository root.
-
-## GitHub release
-Create a release tagged `v0.1.5.1` and attach both `module.json` and `xendrik-hexcrawl-v0.1.5.1.zip` as release assets.
-
-The manifest URL is `https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json`.
-
-The module download URL points to the versioned ZIP attached to the release.
-
-Do not upload the master repository ZIP as the module installation package.
+For Forge/GitHub, publish `module.json` and the module ZIP to release tag `v0.1.5.2`. Install via manifest URL as usual.
