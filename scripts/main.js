@@ -4,6 +4,7 @@ const CONDITIONS=[['Favorable Weather',-1,0],['Clear Skies',0,0],['Calm Passage'
 let busy=false;
 const lastTokenHex=new Map();
 const priorTokenPositions=new Map();
+const movementQueue=new Map();
 const capturedRolls=new Set();
 const gm=()=>game.user.isGM;
 const library=()=>foundry.utils.deepClone(game.settings.get(ID,'journeys'));
@@ -47,16 +48,21 @@ function stepHexes(a,b,scene){
  if(!Number.isFinite(dx)||!Number.isFinite(dy)||(!dx&&!dy))return 0;
  const grid=canvas?.scene?.id===scene?.id?canvas.grid:null;
  const size=Number(scene?.grid?.size)||Number(grid?.size)||100;
- // Use the V14 canvas grid API where available; never let an API mismatch swallow movement.
- if(grid?.getDirectPath){
+ // Foundry V14 grid offsets are integer row/column coordinates, not pixel coordinates.
+ if(grid?.getOffset){
   try{
-   const start={x:a.x+size/2,y:a.y+size/2},end={x:b.x+size/2,y:b.y+size/2};
-   const path=grid.getDirectPath([start,end]);
-   if(Array.isArray(path)&&path.length>1)return path.length-1;
-  }catch(err){console.debug('[Xendrik] Grid direct-path fallback:',err);}
+   const aa=grid.getOffset({x:Number(a.x)+size/2,y:Number(a.y)+size/2});
+   const bb=grid.getOffset({x:Number(b.x)+size/2,y:Number(b.y)+size/2});
+   const ar=Array.isArray(aa)?aa:[aa?.i??aa?.row,aa?.j??aa?.column];
+   const br=Array.isArray(bb)?bb:[bb?.i??bb?.row,bb?.j??bb?.column];
+   if(ar.every(Number.isFinite)&&br.every(Number.isFinite)){
+    const dr=Math.abs(br[0]-ar[0]),dc=Math.abs(br[1]-ar[1]);
+    if(dr===0&&dc===0)return 0;
+    // Use conservative offset count; avoid counting a single diagonal hex as two.
+    return Math.max(dr,dc);
+   }
+  }catch(err){console.debug('[Xendrik] grid offset fallback',err);}
  }
- // Hex neighbors have center-to-center distances close to one grid size; use
- // a conservative threshold to tolerate snapped positions and varying hex layouts.
  const distance=Math.hypot(dx,dy);
  return distance<size*0.35?0:Math.max(1,Math.round(distance/size));
 }
@@ -74,30 +80,34 @@ async function travel(s,hexes){for(let i=0;i<hexes;i++){if(s.paused||!s.active)b
 // Foundry's token update hook is authoritative. Store the old position in preUpdateToken,
 // then compare the actual new document position; do not depend on the change payload being complete.
 function captureTokenPosition(doc,change){
- if(!gm()||(!Object.hasOwn(change,'x')&&!Object.hasOwn(change,'y')))return;
+ if(!gm()||(!Object.prototype.hasOwnProperty.call(change,'x')||Object.prototype.hasOwnProperty.call(change,'y')))return;
  priorTokenPositions.set(doc.uuid,{x:doc.x,y:doc.y});
 }
 async function movedToken(doc,change){
- if(!gm()||(!Object.hasOwn(change,'x')&&!Object.hasOwn(change,'y')))return;
- const before=priorTokenPositions.get(doc.uuid);priorTokenPositions.delete(doc.uuid);
+ if(!gm()||(!Object.prototype.hasOwnProperty.call(change,'x')||Object.prototype.hasOwnProperty.call(change,'y')))return;
  const s=state();
  const match=String(doc.id)===String(s.token)&&String(doc.parent?.id)===String(s.scene);
- console.debug('[Xendrik v0.1.5.2] token movement',{
-  token:doc.id,tracked:s.token,scene:doc.parent?.id,trackedScene:s.scene,
-  active:s.active,paused:s.paused,match,before,after:{x:doc.x,y:doc.y},change
+ const old=priorTokenPositions.get(doc.uuid)??lastTokenHex.get(doc.uuid);
+ priorTokenPositions.delete(doc.uuid);
+ const now={x:Number(doc.x),y:Number(doc.y)};
+ lastTokenHex.set(doc.uuid,now);
+ console.info('[Xendrik 0.1.5.3] token update',{match,active:s.active,paused:s.paused,old,now,changes:change});
+ if(!s.active||!match||!old)return;
+ const count=stepHexes(old,now,doc.parent);
+ console.info('[Xendrik 0.1.5.3] hex movement',count);
+ if(count<1)return;
+ // Serialize movement processing so asynchronous chat/settings writes cannot overwrite one another.
+ const key=activeId();
+ const prior=movementQueue.get(key)??Promise.resolve();
+ const task=prior.catch(()=>{}).then(async()=>{
+  const fresh=state();if(!fresh.active||fresh.token!==doc.id||fresh.scene!==doc.parent?.id)return;
+  if(fresh.paused){fresh.queuedHexes=(fresh.queuedHexes??0)+count;await save(fresh);console.info('[Xendrik] queued movement',count);return;}
+  await travel(fresh,count);
+  manager?.render(false);
  });
- if(!s.active||!match)return;
- const previous=before??lastTokenHex.get(doc.uuid);
- lastTokenHex.set(doc.uuid,{x:doc.x,y:doc.y});
- if(!previous){console.warn('[Xendrik] No previous token position; movement baseline reset.');return;}
- const count=stepHexes(previous,{x:doc.x,y:doc.y},doc.parent);
- console.debug('[Xendrik] measured hex movement:',count);
- if(!count)return;
- if(busy||s.paused){s.queuedHexes=(s.queuedHexes??0)+count;await save(s);ui.notifications.info(`${count} hex(es) queued for journey processing.`);return;}
- busy=true;
- try{await travel(s,count);manager?.render(false);}
- catch(err){console.error('Xendrik travel error',err);ui.notifications.error(`Journey movement error: ${err.message}`);}
- finally{busy=false;}
+ movementQueue.set(key,task);
+ try{await task;}catch(err){console.error('[Xendrik] movement processing failed',err);ui.notifications.error(`Journey movement error: ${err.message}`);}
+ finally{if(movementQueue.get(key)===task)movementQueue.delete(key);}
 }
 // Character sheet rolls are recognized by the dnd5e roll metadata attached to ChatMessages.
 function identifySkillRoll(message){
@@ -187,6 +197,13 @@ _replaceHTML(result,content){const old=content.querySelector('.xh');const y=old?
 async _onRender(context,options){await super._onRender(context,options);}
 bind(root){root.querySelectorAll('[data-setting]').forEach(el=>el.addEventListener('change',async()=>{let s=state();s[el.dataset.setting]=['frequency','exhaustionTiming','curseDirection','curseTime'].includes(el.dataset.setting)?el.value:Number(el.value);if(el.dataset.setting==='dc'&&(!Number.isSafeInteger(s.dc)||s.dc<1))throw Error('Tracking DC must be a positive integer');if(el.dataset.setting==='hexesPerDay'&&(!Number.isFinite(s.hexesPerDay)||s.hexesPerDay<=0))throw Error('Hexes per day must be greater than zero');await save(s);this.render();}));root.querySelector('.xh-drop')?.addEventListener('drop',async e=>{e.preventDefault();try{let data=TextEditor.getDragEventData(e),a=await fromUuid(data.uuid);if(a?.documentName!=='Actor')return;let s=state();if(!s.party.includes(a.id))s.party.push(a.id);await save(s);this.render();}catch(err){ui.notifications.error(err.message);}});root.querySelector('.xh-drop')?.addEventListener('dragover',e=>e.preventDefault());root.querySelectorAll('[data-remove]').forEach(el=>el.onclick=async()=>{let s=state();s.party=s.party.filter(id=>id!==el.dataset.remove);await save(s);this.render();});root.querySelectorAll('[data-undo]').forEach(el=>el.onclick=async()=>{await undo(el.dataset.undo);this.render();});root.querySelectorAll('[data-act]').forEach(el=>el.onclick=async()=>{try{let s=state(),a=el.dataset.act;if(a==='token'){let t=canvas.tokens.controlled[0];if(!t)throw Error('Select a token first');s.token=t.document.id;s.scene=canvas.scene.id;lastTokenHex.set(t.document.uuid,{x:t.document.x,y:t.document.y});await save(s);}if(a==='start'){if(!current())throw Error('Create a journey in the Journeys tab first');if(!s.party.length||!s.token)throw Error('Select party and tracked token first');s.active=true;s.paused=false;s.hexes=0;s.timeHexes=0;s.days=0;s.dayLog=[];s.checks=[];s.pending=null;s.exhaustionApplied={};s.queuedHexes=0;{const t=canvas.scene?.tokens?.get(s.token);if(t)lastTokenHex.set(t.uuid,{x:t.x,y:t.y});}await save(s);await chat('🚩 Journey started — Day 1.');}if(a==='pause'){s.paused=!s.paused;await save(s);}if(a==='end'){if(s.exhaustionTiming==='end')await applyExhaustion(s,penalties(s));s.active=false;s.paused=false;await save(s);await chat(`🏁 Journey ended on Day ${s.days+1} (${s.days} completed travel days). Net travel exhaustion: ${penalties(s)}.`);}if(a==='prompt'){await postTrackingPrompt(root.querySelector('#xh-prompt-skill').value,root.querySelector('#xh-prompt-difficulty').value,root.querySelector('#xh-prompt-recipient').value);}if(a==='manual'){s.pending={type:'encounter',dc:s.dc+(s.condition?.dc??0)};s.paused=true;await save(s);await chat('⚠️ GM has initiated a tracking encounter.',true);}if(a==='neutral'){s.pending=null;s.paused=false;await save(s);await flushQueued();}if(a==='success'||a==='failure'){await resolveCheck(root.querySelector('#xh-actor').value,root.querySelector('#xh-skill').value,root.querySelector('#xh-roll').value,a==='success');}if(a==='mark-used'){await markManual(root.querySelector('#xh-manual-actor').value,root.querySelector('#xh-manual-key').value,root.querySelector('#xh-manual-outcome').value);}if(a==='reset'){if(!await Dialog.confirm({title:'Reset skill restrictions?',content:'This will reverse every recorded check and recalculate penalties. Continue?'}))return;for(let c of s.checks)c.undone=true;await updateExhaustion(s);await save(s);}this.render();}catch(err){console.error(err);ui.notifications.error(err.message);}});root.querySelector('#xh-manual-actor')?.addEventListener('change',e=>{let a=game.actors.get(e.target.value),select=root.querySelector('#xh-manual-key');if(select){let vals=[...skillOptions(a).map(x=>[x.id,x.label]),...Object.entries({str:'Strength',dex:'Dexterity',con:'Constitution',int:'Intelligence',wis:'Wisdom',cha:'Charisma'}).map(([k,v])=>['ability:'+k,v+' (Ability Check)'])].sort((x,y)=>x[1].localeCompare(y[1],undefined,{sensitivity:'base'}));select.innerHTML=vals.map(([k,v])=>`<option value="${escape(k)}">${escape(v)}${usedSkills(state()).has(k)?' (USED)':''}</option>`).join('');}});root.querySelector('#xh-actor')?.addEventListener('change',e=>{let actor=game.actors.get(e.target.value);let select=root.querySelector('#xh-skill');if(select)select.innerHTML=skillOptions(actor).map(x=>`<option value="${escape(x.id)}">${escape(x.label)}${usedSkills(state()).has(x.id)?' (USED)':''}</option>`).join('');});}}
 // Native Foundry V14 sidebar tab, using the same AbstractSidebarTab API as Dice So Nice.
+async function xhTextDialog(title,label,value=''){
+ const result=await foundry.applications.api.DialogV2.wait({window:{title},content:`<form><div class="form-group"><label>${escape(label)}</label><input type="text" name="xhValue" value="${escape(value)}" autofocus required></div></form>`,buttons:[{action:'ok',label:'Save',icon:'fa-solid fa-check',default:true,callback:(event,button,dialog)=>dialog.element.querySelector('[name=xhValue]')?.value?.trim()??''},{action:'cancel',label:'Cancel',callback:()=>null}]});
+ return result;
+}
+async function xhConfirm(title,message){
+ return await foundry.applications.api.DialogV2.confirm({window:{title},content:`<p>${escape(message)}</p>`,yes:{label:'Confirm'},no:{label:'Cancel'},default:'no'});
+}
 const { HandlebarsApplicationMixin }=foundry.applications.api;
 const { AbstractSidebarTab }=foundry.applications.sidebar;
 class JourneySidebar extends HandlebarsApplicationMixin(AbstractSidebarTab){
@@ -208,13 +225,13 @@ class JourneySidebar extends HandlebarsApplicationMixin(AbstractSidebarTab){
      const j=await createJourney(result.name,result.folder);if(j){this.render();manager?.render(true);}
    });
    root.querySelector('[data-new-folder]')?.addEventListener('click',async()=>{
-     const name=prompt('New folder name:','Journeys');if(!name?.trim())return;
+     const name=await xhTextDialog('Create Folder','Folder name','Journeys');if(!name?.trim())return;
      const db=library();db.folders.push({id:foundry.utils.randomID(),name:name.trim()});await game.settings.set(ID,'journeys',db);this.render();
    });
    root.querySelectorAll('[data-open-journey]').forEach(el=>el.addEventListener('click',()=>openJourney(el.dataset.openJourney)));
    root.querySelectorAll('[data-rename-journey]').forEach(el=>el.addEventListener('click',async e=>{
      e.stopPropagation();const db=library(),j=db.items.find(j=>j.id===el.dataset.renameJourney);if(!j)return;
-     const name=prompt('Rename journey:',j.name);if(!name?.trim())return;j.name=name.trim();await game.settings.set(ID,'journeys',db);this.render();
+     const name=await xhTextDialog('Rename Journey','Journey name',j.name);if(!name?.trim())return;j.name=name.trim();await game.settings.set(ID,'journeys',db);this.render();
    }));
    root.querySelectorAll('[data-move-journey]').forEach(el=>el.addEventListener('change',async()=>{
      const db=library(),j=db.items.find(j=>j.id===el.dataset.moveJourney);if(!j)return;
@@ -223,13 +240,13 @@ class JourneySidebar extends HandlebarsApplicationMixin(AbstractSidebarTab){
    root.querySelectorAll('[data-delete-journey]').forEach(el=>el.addEventListener('click',async e=>{
      e.stopPropagation();const id=el.dataset.deleteJourney,j=library().items.find(j=>j.id===id);if(!j)return;
      if(j.data.active){ui.notifications.warn('End this journey before deleting it.');return;}
-     if(!confirm(`Delete journey "${j.name}"? This cannot be undone.`))return;
+     if(!await xhConfirm('Delete Journey',`Delete journey "${j.name}"? This cannot be undone.`))return;
      const db=library();db.items=db.items.filter(j=>j.id!==id);await game.settings.set(ID,'journeys',db);
      if(activeId()===id)await game.settings.set(ID,'activeJourneyId','');this.render();
    }));
    root.querySelectorAll('[data-rename-folder]').forEach(el=>el.addEventListener('click',async()=>{
      const db=library(),f=db.folders.find(f=>f.id===el.dataset.renameFolder);if(!f)return;
-     const name=prompt('Rename folder:',f.name);if(!name?.trim())return;f.name=name.trim();await game.settings.set(ID,'journeys',db);this.render();
+     const name=await xhTextDialog('Rename Folder','Folder name',f.name);if(!name?.trim())return;f.name=name.trim();await game.settings.set(ID,'journeys',db);this.render();
    }));
  }
 }
@@ -263,6 +280,7 @@ Hooks.once('ready',async()=>{
  Hooks.on('xendrikJourneysChanged',()=>ui.sidebar?.tabs?.['xendrik-journeys']?.render(false));
 });
 Hooks.on('preUpdateToken',captureTokenPosition);
+Hooks.on('canvasReady',()=>{const s=state();if(s.token&&s.scene===canvas.scene?.id){const doc=canvas.scene.tokens.get(s.token);if(doc)lastTokenHex.set(doc.uuid,{x:doc.x,y:doc.y});}});
 Hooks.on('updateToken',movedToken);
 // Chat card rolls are handled explicitly to avoid duplicate captures.
 
