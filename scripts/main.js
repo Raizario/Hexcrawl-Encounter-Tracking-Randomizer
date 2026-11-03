@@ -40,21 +40,25 @@ const escape=v=>foundry.utils.escapeHTML(String(v??''));
 function skillOptions(actor){let data=actor?.system?.skills??{};return Object.entries(data).map(([id,v])=>({id,label:game.dnd5e?.config?.skills?.[id]?.label??CONFIG.DND5E?.skills?.[id]?.label??v.label??id,ability:v.ability??CONFIG.DND5E?.skills?.[id]?.ability??''})).sort((a,b)=>String(a.label).localeCompare(String(b.label),undefined,{sensitivity:'base'}));}
 async function updateExhaustion(s){if(s.exhaustionTiming!=='immediate')return;await applyExhaustion(s,penalties(s));}
 async function applyExhaustion(s,target){for(let id of s.party){let actor=game.actors.get(id);if(!actor)continue;let prior=s.exhaustionApplied[id]??0;let current=Number(actor.system?.attributes?.exhaustion??0);let next=Math.max(0,Math.min(10,current+target-prior));if(next!==current)await actor.update({'system.attributes.exhaustion':next});s.exhaustionApplied[id]=target;if(next>=10)await chat(`☠️ ${escape(actor.name)} has reached exhaustion level 10 and dies.`);}}
-function hexCell(pos,scene){
- const grid=scene?.grid; if(!grid)return null;
- try {const cell=grid.getOffset?.(pos);if(cell&&Number.isFinite(cell.i)&&Number.isFinite(cell.j))return `${cell.i},${cell.j}`;}catch(e){}
- const size=Number(grid.size)||100;return `${Math.round(pos.x/size)},${Math.round(pos.y/size)}`;
-}
+// V14: Scene.grid is grid configuration, while canvas.grid is the rendered grid.
+// The old code attempted Scene.grid.getOffset() and could round adjacent moves to zero.
 function stepHexes(a,b,scene){
- const grid=scene?.grid;if(!grid)return 0;
- try {const from=grid.getOffset?.(a),to=grid.getOffset?.(b);if(from&&to){
-   const ai=Number(from.i),aj=Number(from.j),bi=Number(to.i),bj=Number(to.j);
-   if([ai,aj,bi,bj].every(Number.isFinite)){
-     if(typeof grid.getDirectPath==='function'){const path=grid.getDirectPath([a,b]);if(Array.isArray(path)&&path.length>1)return path.length-1;}
-     return Math.max(Math.abs(bi-ai),Math.abs(bj-aj),Math.abs((bi-ai)+(bj-aj)));
-   }
- }}catch(e){console.warn('Xendrik grid path fallback',e);}
- const size=Number(grid.size)||100;return Math.max(0,Math.round(Math.hypot(b.x-a.x,b.y-a.y)/size));
+ const dx=Number(b.x)-Number(a.x),dy=Number(b.y)-Number(a.y);
+ if(!Number.isFinite(dx)||!Number.isFinite(dy)||(!dx&&!dy))return 0;
+ const grid=canvas?.scene?.id===scene?.id?canvas.grid:null;
+ const size=Number(scene?.grid?.size)||Number(grid?.size)||100;
+ // Use the V14 canvas grid API where available; never let an API mismatch swallow movement.
+ if(grid?.getDirectPath){
+  try{
+   const start={x:a.x+size/2,y:a.y+size/2},end={x:b.x+size/2,y:b.y+size/2};
+   const path=grid.getDirectPath([start,end]);
+   if(Array.isArray(path)&&path.length>1)return path.length-1;
+  }catch(err){console.debug('[Xendrik] Grid direct-path fallback:',err);}
+ }
+ // Hex neighbors have center-to-center distances close to one grid size; use
+ // a conservative threshold to tolerate snapped positions and varying hex layouts.
+ const distance=Math.hypot(dx,dy);
+ return distance<size*0.35?0:Math.max(1,Math.round(distance/size));
 }
 async function condition(s){let n=await (new Roll('1d10')).evaluate();let idx=n.total-1;let [name,mod,dc]=CONDITIONS[idx];s.condition={name,mod,dc,roll:n.total};await chat(`🌿 <b>Travel condition:</b> ${escape(name)} (encounter modifier ${mod>=0?'+':''}${mod}; tracking DC ${s.dc+dc}).`);if(idx===9)await curse(s);else if(idx===8){s.pending={type:'special',name:'Manifest Zone'};s.paused=true;await chat('🌀 <b>Manifest Zone!</b> GM: resolve the special event in the Journey Manager.');} }
 async function curse(s){let d=(await (new Roll('1d6')).evaluate()).total;let steps=d<=3?1:d<=5?2:3;let counted=0;for(let i=0;i<steps;i++)if(s.curseTime==='always'||(s.curseTime==='chance'&&(await new Roll('1d2')).evaluate()).total===2)counted++;s.timeHexes+=counted;let previous=s.days;s.days=Math.floor(s.timeHexes/s.hexesPerDay);await logDays(s,previous,"Traveler's Curse");await chat(`🧭 <b>Traveler's Curse:</b> ${steps} forced hex(es), ${counted} time-counted hex(es). Direction mode: ${escape(s.curseDirection)}. Move the token manually; curse movement is not rolled again.`);}
@@ -76,13 +80,24 @@ function captureTokenPosition(doc,change){
 async function movedToken(doc,change){
  if(!gm()||(!Object.hasOwn(change,'x')&&!Object.hasOwn(change,'y')))return;
  const before=priorTokenPositions.get(doc.uuid);priorTokenPositions.delete(doc.uuid);
- const s=state();if(!s.active||doc.id!==s.token||doc.parent?.id!==s.scene)return;
+ const s=state();
+ const match=String(doc.id)===String(s.token)&&String(doc.parent?.id)===String(s.scene);
+ console.debug('[Xendrik v0.1.5.2] token movement',{
+  token:doc.id,tracked:s.token,scene:doc.parent?.id,trackedScene:s.scene,
+  active:s.active,paused:s.paused,match,before,after:{x:doc.x,y:doc.y},change
+ });
+ if(!s.active||!match)return;
  const previous=before??lastTokenHex.get(doc.uuid);
  lastTokenHex.set(doc.uuid,{x:doc.x,y:doc.y});
- if(!previous)return;
- const count=stepHexes(previous,{x:doc.x,y:doc.y},doc.parent);if(!count)return;
+ if(!previous){console.warn('[Xendrik] No previous token position; movement baseline reset.');return;}
+ const count=stepHexes(previous,{x:doc.x,y:doc.y},doc.parent);
+ console.debug('[Xendrik] measured hex movement:',count);
+ if(!count)return;
  if(busy||s.paused){s.queuedHexes=(s.queuedHexes??0)+count;await save(s);ui.notifications.info(`${count} hex(es) queued for journey processing.`);return;}
- busy=true;try{await travel(s,count);}catch(err){console.error('Xendrik travel error',err);ui.notifications.error(`Journey movement error: ${err.message}`);}finally{busy=false;}
+ busy=true;
+ try{await travel(s,count);manager?.render(false);}
+ catch(err){console.error('Xendrik travel error',err);ui.notifications.error(`Journey movement error: ${err.message}`);}
+ finally{busy=false;}
 }
 // Character sheet rolls are recognized by the dnd5e roll metadata attached to ChatMessages.
 function identifySkillRoll(message){
