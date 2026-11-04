@@ -1,8 +1,8 @@
 {
   "id": "xendrik-hexcrawl",
   "title": "Xen'drik Hexcrawl & Journeys",
-  "description": "Foundry-native journey management dialogs and movement tracking diagnostics/serialization.",
-  "version": "0.1.5.3",
+  "description": "Animated travel condition rolls, explicit tracking DC changes, and optional alternative exhaustion manager controls (beta).",
+  "version": "0.1.6",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -32,5 +32,5 @@
   ],
   "url": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer",
   "manifest": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json",
-  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.5.3/xendrik-hexcrawl-v0.1.5.3.zip"
+  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.6/xendrik-hexcrawl-v0.1.6.zip"
 }
