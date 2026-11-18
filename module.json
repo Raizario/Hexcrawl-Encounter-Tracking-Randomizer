@@ -1,8 +1,8 @@
 {
   "id": "xendrik-hexcrawl",
   "title": "Xen'drik Hexcrawl & Journeys",
-  "description": "Native D&D 5e global alternative exhaustion: 10 native pips, -1 d20 tests and spell/ability save DCs per level, death at 10; journey tracking and animated travel rolls.",
-  "version": "0.1.6.2",
+  "description": "Native D&D 5e skill-roll capture for active tracking prompts, journey tracking, animated travel rolls, and optional global exhaustion.",
+  "version": "0.1.6.3",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -32,5 +32,5 @@
   ],
   "url": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer",
   "manifest": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/latest/download/module.json",
-  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.6.2/xendrik-hexcrawl-v0.1.6.2.zip"
+  "download": "https://github.com/Raizario/Hexcrawl-Encounter-Tracking-Randomizer/releases/download/v0.1.6.3/xendrik-hexcrawl-v0.1.6.3.zip"
 }
