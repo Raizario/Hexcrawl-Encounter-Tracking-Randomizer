@@ -216,6 +216,27 @@ async function postTrackingPrompt(skill,difficulty,recipient="all"){
  const buttons=s.party.filter(id=>recipient==='all'||id===recipient).map(id=>game.actors.get(id)).filter(a=>a&&eligible(s).includes(a.id)&&skillOptions(a).some(x=>x.id===skill)).map(a=>`<button type="button" data-xh-roll="${escape(promptId)}" data-actor="${escape(a.id)}" data-skill="${escape(skill)}">🎲 ${escape(a.name)} — Roll ${escape(name)}</button>`).join('');
  await chat(`<div class="xh-chat-prompt"><h3>🧭 Tracking: ${escape(name)}</h3><p>Difficulty: ${escape(difficulty)} · DC ${dc}</p><p>Choose your character to roll:</p>${buttons}</div>`);
 }
+// Capture independent sheet rolls while an explicit tracking prompt is active.
+const xhPromptRollsInProgress=new Set();
+const xhSeenSkillRolls=new WeakSet();
+function xhNativeSkillRolled(rolls,data){
+ try{
+  const actor=data?.subject,skill=data?.skill;
+  if(!actor?.id||!skill||!Array.isArray(rolls)||!rolls.length)return;
+  if(xhPromptRollsInProgress.has(actor.id))return;
+  const s=state(),pending=s.pending;
+  if(!s.active||!pending?.promptId||pending.skill!==skill||!s.party.includes(actor.id))return;
+  if(pending.recipient&&pending.recipient!=='all'&&pending.recipient!==actor.id)return;
+  if(!eligible(s).includes(actor.id)||usedSkills(s).has(skill))return;
+  if(!gm()&&!actor.testUserPermission(game.user,'OWNER'))return;
+  const roll=rolls.find(r=>r&&Number.isFinite(Number(r.total))&&!xhSeenSkillRolls.has(r));
+  if(!roll)return;
+  xhSeenSkillRolls.add(roll);
+  const total=Number(roll.total),promptId=pending.promptId;
+  if(gm())void acceptTrackingRoll(promptId,actor.id,skill,total).catch(e=>console.error("Xendrik native skill capture",e));
+  else game.socket.emit(`module.${ID}`,{type:'tracking-roll',promptId,actorId:actor.id,skill,total,userId:game.user.id});
+ }catch(e){console.error("Xendrik native skill hook",e);}
+}
 async function requestTrackingRoll(promptId,actorId,skill){
  const s=state(),a=game.actors.get(actorId);
  if(!s.active||s.pending?.promptId!==promptId||s.pending?.skill!==skill)throw Error('This prompt is no longer active');
@@ -223,10 +244,13 @@ async function requestTrackingRoll(promptId,actorId,skill){
  if(!eligible(s).includes(actorId)||usedSkills(s).has(skill))throw Error('This character or skill has already been used for the current journey');
  if(!gm()&&!a.testUserPermission(game.user,'OWNER'))throw Error('You do not control this actor');
  let result;
+ xhPromptRollsInProgress.add(actorId);
+ try{
  if(typeof a.rollSkill==='function')result=await a.rollSkill({skill,dialog:false});
  else if(typeof a.rollSkillCheck==='function')result=await a.rollSkillCheck(skill);
  else if(typeof a.rollSkillTest==='function')result=await a.rollSkillTest(skill);
  else throw Error('No supported skill rolling method was found on this actor');
+ }finally{xhPromptRollsInProgress.delete(actorId);}
  const total=Number(result?.total??result?.rolls?.[0]?.total??result?.roll?.total??result?.[0]?.total);
  if(!Number.isFinite(total))throw Error('Roll was not returned as a total. Try the actor sheet or GM manual resolution');
  if(gm())await acceptTrackingRoll(promptId,actorId,skill,total);
@@ -328,6 +352,7 @@ Hooks.once('ready',async()=>{
  game.xendrikHexcrawl={open:()=>manager.render(true),getState:state,openJourney,createJourney};
  Hooks.on('xendrikJourneysChanged',()=>ui.sidebar?.tabs?.['xendrik-journeys']?.render(false));
 });
+Hooks.on('dnd5e.rollSkill',xhNativeSkillRolled);
 Hooks.on('preUpdateToken',captureTokenPosition);
 Hooks.on('canvasReady',()=>{const s=state();if(s.token&&s.scene===canvas.scene?.id){const doc=canvas.scene.tokens.get(s.token);if(doc)lastTokenHex.set(doc.uuid,{x:doc.x,y:doc.y});}});
 Hooks.on('updateToken',movedToken);
