@@ -1,49 +1,42 @@
 const ID='xendrik-hexcrawl';
 const customExhaustion=()=>game.settings.get(ID,'alternativeExhaustion');
 const exhaustionLevel=actor=>Math.max(0,Math.min(10,Math.trunc(Number(actor?.system?.attributes?.exhaustion??0)||0)));
-// The world setting is independent of individual journeys. Never mutate system source files.
-async function toggleAlternativeExhaustion(enabled){
- if(!game.user.isGM)throw Error('Only a GM can change exhaustion rules');
- await game.settings.set(ID,'alternativeExhaustion',!!enabled);
- ui.notifications.info(`Alternative exhaustion ${enabled?'enabled':'disabled'}.`);
- manager?.render(false);
- for(const a of game.actors.contents)if(a.sheet?.rendered)a.sheet.render(false);
-}
-// Foundry sheet augmentation: an accessible, actor-backed ten-step control.
-function injectExhaustionControl(sheet,html){
- if(!customExhaustion())return;
- const actor=sheet.actor;if(!actor?.system?.attributes||!('exhaustion' in actor.system.attributes))return;
- const root=html instanceof HTMLElement?html:html?.[0]??sheet.element?.[0]??sheet.element;
- if(!root?.querySelector||root.querySelector('.xh-exhaustion-control'))return;
- const level=exhaustionLevel(actor);
- const wrapper=document.createElement('section');wrapper.className='xh-exhaustion-control';
- wrapper.innerHTML=`<div class="xh-exhaustion-heading"><b>Alternative Exhaustion</b><span>${level}/10</span></div><div class="xh-exhaustion-bubbles" role="group" aria-label="Exhaustion level">${Array.from({length:10},(_,i)=>`<button type="button" data-xh-exhaustion="${i+1}" class="${i<level?'active':''}" title="Set exhaustion to ${i+1}" aria-label="Exhaustion ${i+1}"></button>`).join('')}</div><small>−${level} to d20 tests and save DCs${level===10?' · Death threshold reached':''}</small>`;
- const target=root.querySelector('[data-tab="attributes"]')??root.querySelector('.tab.attributes')??root.querySelector('.sheet-body')??root.querySelector('.window-content')??root;
- target.prepend(wrapper);
- wrapper.querySelectorAll('[data-xh-exhaustion]').forEach(btn=>btn.addEventListener('click',async()=>{
-  if(!actor.isOwner)return ui.notifications.warn('You cannot change this actor');
-  const n=Number(btn.dataset.xhExhaustion);const next=n===exhaustionLevel(actor)?n-1:n;
-  try{await actor.update({'system.attributes.exhaustion':next});if(next===10)ui.notifications.warn(`${actor.name} reached exhaustion 10 (death).`);sheet.render(false);}catch(err){ui.notifications.error(err.message);}
- }));
-}
-// Apply an exhaustion modifier to D&D roll configuration only where the system exposes
-// a mutable roll configuration. This intentionally avoids editing completed rolls.
-function applyRollExhaustion(actor,config){
- if(!customExhaustion()||!actor||!config||typeof config!=='object')return;
- const level=exhaustionLevel(actor);if(!level||config._xhExhaustionApplied)return;
- // Many dnd5e roll hooks pass a config with parts; preserve all other modifiers.
- if(Array.isArray(config.parts)){
-  config.parts.push(`-${level}`);config._xhExhaustionApplied=true;
- }else if(Array.isArray(config.bonuses)){
-  config.bonuses.push(`-${level}`);config._xhExhaustionApplied=true;
+// World-wide native D&D 5e exhaustion rules; no sheet overlay.
+let originalExhaustionConfig=null;
+function configureNativeExhaustion(){
+ const entry=CONFIG.DND5E?.conditionTypes?.exhaustion;
+ if(!entry)return console.warn("Xen'drik: exhaustion configuration unavailable");
+ originalExhaustionConfig??={levels:entry.levels,reduction:foundry.utils.deepClone(entry.reduction??{}),conditions:foundry.utils.deepClone(entry.conditions??{})};
+ if(customExhaustion()){
+  entry.levels=10;
+  entry.reduction={...originalExhaustionConfig.reduction,rolls:1,speed:0};
+  entry.conditions={10:['dead']};
+ }else{
+  entry.levels=originalExhaustionConfig.levels;
+  entry.reduction=foundry.utils.deepClone(originalExhaustionConfig.reduction);
+  entry.conditions=foundry.utils.deepClone(originalExhaustionConfig.conditions);
  }
 }
-function registerExhaustionRollHooks(){
- for(const name of ['dnd5e.preRollAbilityTest','dnd5e.preRollAbilitySave','dnd5e.preRollSkill','dnd5e.preRollAttack','dnd5e.preRollDeathSave']){
-  Hooks.on(name,(actor,config)=>applyRollExhaustion(actor,config));
- }
+function installSaveDCPatch(){
+ const ActorClass=CONFIG.Actor?.documentClass;
+ if(!ActorClass?.prototype||ActorClass.prototype._xhExhaustionDCWrapped)return;
+ const original=ActorClass.prototype.prepareDerivedData;
+ if(typeof original!=='function')return;
+ ActorClass.prototype.prepareDerivedData=function(...args){
+  const result=original.apply(this,args);
+  if(customExhaustion()&&(this.type==='character'||this.type==='npc')){
+   const n=exhaustionLevel(this);
+   if(n){
+    for(const ability of Object.values(this.system?.abilities??{})){
+     if(typeof ability?.dc==='number')ability.dc-=n;
+    }
+    if(typeof this.system?.attributes?.spell?.dc==='number')this.system.attributes.spell.dc-=n;
+   }
+  }
+  return result;
+ };
+ ActorClass.prototype._xhExhaustionDCWrapped=true;
 }
-
 const defaults=()=>({active:false,paused:false,party:[],token:null,scene:null,hexes:0,timeHexes:0,days:0,dayLog:[],checks:[],pending:null,condition:null,successThreshold:4,failureThreshold:2,dc:15,difficultyMods:{common:-5,skilled:0,expert:5,outlandish:10},queuedHexes:0,encounterDie:3,hexesPerDay:1,frequency:'hex',exhaustionTiming:'end',curseDirection:'single',curseTime:'chance',exhaustionApplied:{},startTime:Date.now()});
 const CONDITIONS=[['Favorable Weather',-1,0],['Clear Skies',0,0],['Calm Passage',-1,0],['Heavy Rainfall',-1,2],['Dense Jungle',1,2],['Ominous Signs',1,0],['Unstable Terrain',0,2],['Arcane Disturbance',1,-2],['Manifest Zone',0,0], ["Traveler’s Curse",0,0]];
 let busy=false;
@@ -307,8 +300,7 @@ class JourneySidebar extends HandlebarsApplicationMixin(AbstractSidebarTab){
 }
 let manager;
 Hooks.once('init',()=>{
- game.settings.register(ID,'alternativeExhaustion',{name:'Alternative Exhaustion Rules',hint:'Enable Xen’drik 0–10 exhaustion rules',scope:'world',config:false,type:Boolean,default:false});
- registerExhaustionRollHooks();
+ game.settings.register(ID,'alternativeExhaustion',{name:'Alternative Exhaustion Rules',hint:'World-wide D&D 5e exhaustion: 10 native pips, -1 to d20 tests and spell/ability save DCs per level, death at 10, no speed penalty. Reload clients after changing.',scope:'world',config:true,type:Boolean,default:false,requiresReload:true});
  game.settings.register(ID,'journey',{scope:'world',config:false,type:Object,default:defaults()}); // Legacy data retained for migration
  game.settings.register(ID,'journeys',{scope:'world',config:false,type:Object,default:{items:[],folders:[]}});
  game.settings.register(ID,'activeJourneyId',{scope:'world',config:false,type:String,default:''});
@@ -356,5 +348,10 @@ Hooks.once('ready',()=>game.socket.on(`module.${ID}`,async data=>{
  try{await acceptTrackingRoll(data.promptId,data.actorId,data.skill,Number(data.total));}catch(e){console.error('Xendrik tracking roll',e);}
 }));
 
-Hooks.on('renderActorSheet',injectExhaustionControl);
-Hooks.on('renderActorSheetV2',injectExhaustionControl);
+Hooks.once('ready',()=>{
+ configureNativeExhaustion();
+ installSaveDCPatch();
+ for(const actor of game.actors.contents){
+  try{actor.prepareData();}catch(e){console.warn("Xen'drik exhaustion: actor refresh failed",actor.name,e);}
+ }
+});
