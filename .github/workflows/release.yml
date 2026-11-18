@@ -1,0 +1,35 @@
+name: Publish Foundry module release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Foundry release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/xendrik-hexcrawl
+          cp module.json dist/xendrik-hexcrawl/
+          cp -r scripts styles templates dist/xendrik-hexcrawl/
+          cd dist
+          zip -qr "xendrik-hexcrawl-v${VERSION}.zip" xendrik-hexcrawl
+          cp xendrik-hexcrawl/module.json module.json
+      - name: Publish release with manifest and ZIP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/module.json "dist/xendrik-hexcrawl-${TAG}.zip" --clobber
+          else
+            gh release create "$TAG" dist/module.json "dist/xendrik-hexcrawl-${TAG}.zip" --title "$TAG" --generate-notes
+          fi
